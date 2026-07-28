@@ -649,11 +649,11 @@ export default function CSVEditor() {
             <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden flex flex-col flex-1">
               
               {/* Full Width Table Scroll Area */}
-              <div className="overflow-auto max-h-[600px] flex-1 custom-table-container">
+              <div className="overflow-x-auto custom-table-container">
                 <table className="w-full border-collapse text-left relative">
                   
-                  {/* Sticky Table Header */}
-                  <thead className="bg-slate-50/80 backdrop-blur sticky top-0 z-10">
+                  {/* Table Header */}
+                  <thead className="bg-slate-50">
                     <tr className="border-b border-slate-200">
                       
                       {/* Action column header */}
@@ -665,7 +665,7 @@ export default function CSVEditor() {
                       {headers.map((header, idx) => (
                         <th 
                           key={`header-${idx}`}
-                          className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-600 border-r border-slate-200/50 last:border-r-0 hover:bg-slate-100/50 transition-colors"
+                          className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-600 border-r border-slate-200/50 last:border-r-0 hover:bg-slate-100/50 transition-colors bg-slate-50"
                         >
                           <div className="flex items-center justify-between group">
                             
