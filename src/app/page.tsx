@@ -52,7 +52,7 @@ export default function CSVEditor() {
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: "asc" | "desc" } | null>(null);
   
   // Input references for autofocusing
-  const cellInputRef = useRef<any>(null);
+  const cellInputRef = useRef<HTMLTextAreaElement>(null);
   const headerInputRef = useRef<HTMLInputElement>(null);
   const addColumnInputRef = useRef<HTMLInputElement>(null);
 
@@ -137,17 +137,17 @@ export default function CSVEditor() {
 
   // Parse CSV file
   const handleParseCSV = (file: File) => {
-    Papa.parse(file, {
+    Papa.parse<Record<string, string>>(file, {
       header: true,
       skipEmptyLines: "greedy",
       complete: (results) => {
         let parsedHeaders = results.meta.fields || [];
         if (parsedHeaders.length === 0 && results.data.length > 0) {
-          parsedHeaders = Object.keys(results.data[0] as any);
+          parsedHeaders = Object.keys(results.data[0]);
         }
         
         // Map data to include a unique _row_id
-        const parsedData = (results.data as any[]).map((row, index) => {
+        const parsedData = results.data.map((row, index) => {
           const rowId = `row-${index}-${Date.now()}`;
           const cleanedRow: RowData = { _row_id: rowId };
           parsedHeaders.forEach(header => {
@@ -199,7 +199,11 @@ export default function CSVEditor() {
     if (data.length === 0) return;
 
     // Remove internal _row_id keys before exporting
-    const exportData = data.map(({ _row_id, ...rest }) => rest);
+    const exportData = data.map(row => {
+      const rest = { ...row };
+      delete (rest as Partial<RowData>)._row_id;
+      return rest;
+    });
     
     // Unparse to CSV string
     const csvString = Papa.unparse({
@@ -293,8 +297,9 @@ export default function CSVEditor() {
       setHeaders(headers.filter(h => h !== colName));
       setData(prevData => 
         prevData.map(row => {
-          const { [colName]: _, ...rest } = row;
-          return rest as RowData;
+          const rest = { ...row };
+          delete rest[colName];
+          return rest;
         })
       );
       if (editingCell?.columnKey === colName) {
