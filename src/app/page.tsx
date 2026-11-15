@@ -16,15 +16,15 @@ import {
   RefreshCw, 
   HelpCircle,
   PlusCircle,
-  FileCode2
+  FileCode2,
+  Eye,
+  Columns3
 } from "lucide-react";
 import Papa from "papaparse";
+import { RowData } from "@/types/csv";
+import RowDetailModal from "@/components/RowDetailModal";
 
-// Interfaces
-interface RowData {
-  _row_id: string;
-  [key: string]: string;
-}
+const COMPACT_COLUMN_LIMIT = 6;
 
 interface EditCellState {
   rowId: string;
@@ -59,6 +59,10 @@ export default function CSVEditor() {
   // New column state
   const [newColumnName, setNewColumnName] = useState<string>("");
   const [isAddingColumn, setIsAddingColumn] = useState<boolean>(false);
+
+  // Detail modal & view mode state
+  const [detailRowId, setDetailRowId] = useState<string | null>(null);
+  const [showAllColumns, setShowAllColumns] = useState<boolean>(false);
 
   // Reset pagination when data changes or search query changes
   useEffect(() => {
@@ -237,6 +241,8 @@ export default function CSVEditor() {
       setSearchQuery("");
       setEditingCell(null);
       setEditingHeader(null);
+      setDetailRowId(null);
+      setShowAllColumns(false);
     }
   };
 
@@ -257,7 +263,12 @@ export default function CSVEditor() {
   };
 
   const handleDeleteRow = (rowId: string) => {
-    setData(data.filter(row => row._row_id !== rowId));
+    if (detailRowId === rowId) {
+      const idx = filteredData.findIndex((r) => r._row_id === rowId);
+      const nextRow = filteredData[idx + 1] ?? filteredData[idx - 1] ?? null;
+      setDetailRowId(nextRow ? nextRow._row_id : null);
+    }
+    setData((prev) => prev.filter(row => row._row_id !== rowId));
     if (editingCell?.rowId === rowId) {
       setEditingCell(null);
     }
@@ -398,6 +409,25 @@ export default function CSVEditor() {
 
   const totalPages = Math.ceil(filteredData.length / rowsPerPage) || 1;
 
+  // Compact table column slice vs full columns
+  const hasOverflowColumns = headers.length > COMPACT_COLUMN_LIMIT;
+  const visibleHeaders = useMemo(() => {
+    if (showAllColumns || !hasOverflowColumns) return headers;
+    return headers.slice(0, COMPACT_COLUMN_LIMIT);
+  }, [headers, showAllColumns, hasOverflowColumns]);
+
+  // Detail modal row resolution
+  const detailRowIndex = useMemo(() => {
+    if (!detailRowId) return -1;
+    return filteredData.findIndex((r) => r._row_id === detailRowId);
+  }, [filteredData, detailRowId]);
+
+  const detailRow = useMemo(() => {
+    if (!detailRowId) return null;
+    if (detailRowIndex >= 0) return filteredData[detailRowIndex];
+    return data.find((r) => r._row_id === detailRowId) ?? null;
+  }, [detailRowId, detailRowIndex, filteredData, data]);
+
   return (
     <div className="flex flex-col flex-1 bg-[#fcfcfc] text-slate-800 font-sans min-h-screen">
       {/* Top Navigation Bar */}
@@ -453,7 +483,7 @@ export default function CSVEditor() {
       </header>
 
       {/* Main Workspace Dashboard */}
-      <main className="flex-1 flex flex-col p-6 gap-6 max-w-[1600px] mx-auto w-full">
+      <main className="flex-1 flex flex-col px-4 sm:px-6 py-6 gap-6 w-full">
         {data.length === 0 ? (
           /* Empty State / Upload Screen */
           <div className="flex flex-col flex-1 justify-center items-center py-20">
@@ -599,6 +629,28 @@ export default function CSVEditor() {
 
               {/* Data Modifiers */}
               <div className="flex flex-wrap items-center gap-2">
+                {hasOverflowColumns && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllColumns((prev) => !prev)}
+                    className={`flex items-center gap-1.5 px-3.5 py-2 border rounded-lg text-sm font-semibold transition-all shadow-sm ${
+                      showAllColumns
+                        ? "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100/70"
+                        : "border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50"
+                    }`}
+                    title={
+                      showAllColumns
+                        ? "Switch back to compact fit-to-page view"
+                        : `Show all ${headers.length} columns in table`
+                    }
+                  >
+                    <Columns3 className="w-4 h-4" />
+                    {showAllColumns
+                      ? `Compact View (${COMPACT_COLUMN_LIMIT}/${headers.length})`
+                      : `All Columns (${COMPACT_COLUMN_LIMIT}/${headers.length})`}
+                  </button>
+                )}
+
                 <button
                   onClick={handleAddRow}
                   className="flex items-center gap-1.5 px-3.5 py-2 border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 rounded-lg text-sm font-semibold transition-all shadow-sm"
@@ -652,28 +704,51 @@ export default function CSVEditor() {
 
             {/* Editable Data Table Container */}
             <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden flex flex-col flex-1">
-              
+              {hasOverflowColumns && !showAllColumns && (
+                <div className="px-4 py-2 bg-blue-50/60 border-b border-blue-100 flex flex-wrap items-center justify-between gap-2 text-xs text-blue-700">
+                  <span>
+                    Showing first <strong>{visibleHeaders.length}</strong> of{" "}
+                    <strong>{headers.length}</strong> columns to fit the page without horizontal scrolling. Click{" "}
+                    <strong>Detail</strong> on any row to inspect all columns in full.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAllColumns(true)}
+                    className="font-semibold underline underline-offset-2 hover:text-blue-900 cursor-pointer"
+                  >
+                    Show all {headers.length} columns
+                  </button>
+                </div>
+              )}
+
               {/* Full Width Table Scroll Area */}
-              <div className="overflow-x-auto custom-table-container">
-                <table className="w-full border-collapse text-left relative">
-                  
+              <div className="overflow-x-auto custom-table-container w-full">
+                <table
+                  className={`w-full border-separate border-spacing-0 text-left relative ${
+                    showAllColumns && hasOverflowColumns
+                      ? ""
+                      : "table-fixed min-w-[720px]"
+                  }`}
+                >
                   {/* Table Header */}
                   <thead className="bg-slate-50">
-                    <tr className="border-b border-slate-200">
-                      
-                      {/* Action column header */}
-                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-400 text-center w-12 border-r border-slate-200/50 bg-slate-50">
+                    <tr>
+                      {/* Index column header */}
+                      <th className="sticky left-0 z-10 w-12 min-w-[48px] px-2 py-3 text-xs font-bold uppercase tracking-wider text-slate-400 text-center border-b border-r border-slate-200 bg-slate-50">
                         #
                       </th>
-                      
+
                       {/* Dynamic CSV headers */}
-                      {headers.map((header, idx) => (
-                        <th 
+                      {visibleHeaders.map((header, idx) => (
+                        <th
                           key={`header-${idx}`}
-                          className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-600 border-r border-slate-200/50 last:border-r-0 hover:bg-slate-100/50 transition-colors bg-slate-50"
+                          className={`px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-600 border-b border-r border-slate-200/80 hover:bg-slate-100/70 transition-colors bg-slate-50 ${
+                            showAllColumns && hasOverflowColumns
+                              ? "min-w-[160px] max-w-[240px]"
+                              : ""
+                          }`}
                         >
-                          <div className="flex items-center justify-between group">
-                            
+                          <div className="flex items-center justify-between gap-1.5 min-w-0 group">
                             {/* Editable Header Name */}
                             {editingHeader?.index === idx ? (
                               <input
@@ -688,20 +763,20 @@ export default function CSVEditor() {
                                     setEditingHeader(null);
                                   }
                                 }}
-                                className="px-2 py-0.5 text-xs border border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-100 rounded bg-white text-slate-800 uppercase font-bold w-full"
+                                className="px-2 py-0.5 text-xs border border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-100 rounded bg-white text-slate-800 uppercase font-bold w-full min-w-0"
                               />
                             ) : (
-                              <span 
+                              <span
                                 onDoubleClick={() => setEditingHeader({ index: idx, value: header })}
-                                className="cursor-pointer select-none hover:text-blue-600 transition-colors flex-1"
-                                title="Double-click to rename column"
+                                className="truncate cursor-pointer select-none hover:text-blue-600 transition-colors flex-1 min-w-0"
+                                title={`${header} (Double-click to rename)`}
                               >
                                 {header}
                               </span>
                             )}
 
                             {/* Column action triggers */}
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0">
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                               <button
                                 onClick={() => handleSort(header)}
                                 className="p-0.5 text-slate-400 hover:text-slate-600 rounded transition-colors"
@@ -720,16 +795,21 @@ export default function CSVEditor() {
                           </div>
                         </th>
                       ))}
+
+                      {/* Sticky Rightmost Detail Column Header */}
+                      <th className="sticky right-0 z-10 w-[108px] min-w-[108px] px-3 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 text-center bg-slate-50 border-b border-l border-slate-200 shadow-[-4px_0_10px_-4px_rgba(15,23,42,0.08)]">
+                        Detail
+                      </th>
                     </tr>
                   </thead>
 
                   {/* Table Body */}
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody>
                     {paginatedData.length === 0 ? (
                       <tr>
-                        <td 
-                          colSpan={headers.length + 1}
-                          className="px-6 py-16 text-center text-sm text-slate-400"
+                        <td
+                          colSpan={visibleHeaders.length + 2}
+                          className="px-6 py-16 text-center text-sm text-slate-400 border-b border-slate-100"
                         >
                           No matching records found
                         </td>
@@ -738,13 +818,12 @@ export default function CSVEditor() {
                       paginatedData.map((row, rowIndex) => {
                         const globalIndex = (currentPage - 1) * rowsPerPage + rowIndex + 1;
                         return (
-                          <tr 
+                          <tr
                             key={row._row_id}
-                            className="hover:bg-slate-50/50 transition-colors group"
+                            className="hover:bg-slate-50 transition-colors group"
                           >
-                            
                             {/* Action / Index cell */}
-                            <td className="px-2 py-2 text-xs font-semibold text-slate-400 text-center bg-slate-50/40 border-r border-slate-100/80">
+                            <td className="sticky left-0 z-10 w-12 min-w-[48px] px-2 py-2.5 text-xs font-semibold text-slate-400 text-center bg-slate-50 group-hover:bg-slate-100/80 border-b border-r border-slate-200/70 transition-colors">
                               <div className="flex items-center justify-center group-hover:hidden">
                                 {globalIndex}
                               </div>
@@ -760,19 +839,23 @@ export default function CSVEditor() {
                             </td>
 
                             {/* Data Cells */}
-                            {headers.map((header) => {
+                            {visibleHeaders.map((header) => {
                               const cellValue = row[header] ?? "";
-                              const isEditing = 
-                                editingCell?.rowId === row._row_id && 
+                              const isEditing =
+                                editingCell?.rowId === row._row_id &&
                                 editingCell?.columnKey === header;
 
                               return (
-                                <td 
+                                <td
                                   key={`${row._row_id}-${header}`}
-                                  className={`px-4 py-2 text-sm text-slate-600 border-r border-slate-100/50 last:border-r-0 relative min-w-[160px] max-w-md cursor-pointer hover:bg-blue-50/20 hover:text-slate-900 transition-colors ${
-                                    isEditing ? "bg-blue-50/40" : ""
-                                  }`}
-                                  onDoubleClick={() => setEditingCell({ rowId: row._row_id, columnKey: header })}
+                                  className={`px-4 py-2.5 text-sm text-slate-600 border-b border-r border-slate-100 relative cursor-pointer hover:bg-blue-50/30 hover:text-slate-900 transition-colors ${
+                                    showAllColumns && hasOverflowColumns
+                                      ? "min-w-[160px] max-w-[240px]"
+                                      : ""
+                                  } ${isEditing ? "bg-blue-50/40" : ""}`}
+                                  onDoubleClick={() =>
+                                    setEditingCell({ rowId: row._row_id, columnKey: header })
+                                  }
                                 >
                                   {isEditing ? (
                                     <textarea
@@ -787,11 +870,11 @@ export default function CSVEditor() {
                                           setEditingCell(null);
                                         }
                                       }}
-                                      className="absolute inset-0 px-4 py-2 text-sm text-slate-800 bg-white border border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-100 w-full h-full z-10 resize-none font-sans"
+                                      className="absolute left-0 top-0 min-w-[220px] w-full min-h-[88px] px-3 py-2 text-sm text-slate-800 bg-white border border-blue-500 rounded-md shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-100 z-20 resize-y font-sans"
                                     />
                                   ) : (
-                                    <div 
-                                      className="w-full h-full whitespace-pre-wrap break-words"
+                                    <div
+                                      className="truncate w-full"
                                       title={cellValue ? String(cellValue) : "Double-click to edit"}
                                     >
                                       {cellValue === "" ? (
@@ -804,6 +887,19 @@ export default function CSVEditor() {
                                 </td>
                               );
                             })}
+
+                            {/* Sticky Rightmost Detail Button Cell */}
+                            <td className="sticky right-0 z-10 w-[108px] min-w-[108px] px-3 py-2 text-center bg-white group-hover:bg-slate-50 border-b border-l border-slate-200/80 shadow-[-4px_0_10px_-4px_rgba(15,23,42,0.06)] transition-colors">
+                              <button
+                                type="button"
+                                onClick={() => setDetailRowId(row._row_id)}
+                                className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-600 bg-blue-50/80 hover:bg-blue-600 hover:text-white border border-blue-200/80 hover:border-blue-600 transition-all shadow-2xs cursor-pointer"
+                                title="View full row details"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                Detail
+                              </button>
+                            </td>
                           </tr>
                         );
                       })
@@ -882,6 +978,33 @@ export default function CSVEditor() {
           </div>
         )}
       </main>
+
+      {/* Large Row Detail Modal (1 card = 1 column) */}
+      <RowDetailModal
+        row={detailRow}
+        headers={headers}
+        rowNumber={detailRowIndex >= 0 ? detailRowIndex + 1 : 1}
+        totalRows={filteredData.length}
+        hasPrev={detailRowIndex > 0}
+        hasNext={detailRowIndex >= 0 && detailRowIndex < filteredData.length - 1}
+        onClose={() => setDetailRowId(null)}
+        onPrevRow={() => {
+          if (detailRowIndex > 0) {
+            const prevIdx = detailRowIndex - 1;
+            setDetailRowId(filteredData[prevIdx]._row_id);
+            setCurrentPage(Math.floor(prevIdx / rowsPerPage) + 1);
+          }
+        }}
+        onNextRow={() => {
+          if (detailRowIndex >= 0 && detailRowIndex < filteredData.length - 1) {
+            const nextIdx = detailRowIndex + 1;
+            setDetailRowId(filteredData[nextIdx]._row_id);
+            setCurrentPage(Math.floor(nextIdx / rowsPerPage) + 1);
+          }
+        }}
+        onSaveCell={handleCellSave}
+        onDeleteRow={handleDeleteRow}
+      />
     </div>
   );
 }
